@@ -7,32 +7,45 @@ export interface RateLimitOpts {
   /**
    * Maximum number of connections during ttl window
    */
-  threshold: number;
+  threshold?: number;
 
   /**
    * How long in milliseconds to keep records of requests in memory
    */
-  ttl: number;
+  ttl?: number;
+
+  /**
+   * Custom message when limit reached
+   */
+  message?: string;
 }
+
+type Required<T> =
+  T extends object
+    ? { [P in keyof T]-?: NonNullable<T[P]>; }
+    : T;
 
 const DEFAULT_OPTS: RateLimitOpts = {
   threshold: Infinity,
-  ttl: 86400000, // one day
+  ttl: 86400000,
+  message: 'Too many requests',
 };
 
 const store = new MemoryStore();
 
 export const rateLimit$ = (
-  opts: RateLimitOpts = DEFAULT_OPTS
+  opts: RateLimitOpts = {}
 ): HttpMiddlewareEffect => req$ => {
-  if (opts.ttl < 0) {
+  const options = { ...DEFAULT_OPTS, ...opts } as Required<RateLimitOpts>;
+
+  if (options.ttl < 0) {
     throw new Error('Invalid ttl option must be greater than 0');
   }
-  if (opts.threshold < 0) {
+  if (options.threshold < 0) {
     throw new Error('Invalid threshold option must be greater than 0');
   }
 
-  store.start(opts.threshold, opts.ttl);
+  store.start(options.threshold, options.ttl);
 
   return req$.pipe(
     switchMap(req =>
@@ -43,7 +56,7 @@ export const rateLimit$ = (
         of(req),
         throwError(
           new HttpError(
-            'Too many requests, please try again later.',
+            options.message,
             HttpStatus.TOO_MANY_REQUESTS
           )
         )
