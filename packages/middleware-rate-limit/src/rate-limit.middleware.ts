@@ -1,7 +1,7 @@
-import { HttpMiddlewareEffect, HttpStatus, HttpError } from '@marblejs/core';
-import { Store } from './rate-limit.in-memory-store';
-import { tap, switchMap } from 'rxjs/operators';
+import { HttpError, HttpMiddlewareEffect, HttpStatus } from '@marblejs/core';
 import { iif, of, throwError } from 'rxjs';
+import { switchMap } from 'rxjs/operators';
+import { MemoryStore } from './rate-limit.in-memory-store';
 
 export interface RateLimitOpts {
   /**
@@ -10,34 +10,36 @@ export interface RateLimitOpts {
   threshold: number;
 
   /**
-   * How long to keep records of requests in memory (in seconds)
+   * How long in milliseconds to keep records of requests in memory
    */
-  window: number;
+  ttl: number;
 }
 
 const DEFAULT_OPTS: RateLimitOpts = {
-  threshold: 50,
-  window: 60 * 60 // 1 hour
+  threshold: Infinity,
+  ttl: 86400000, // one day
 };
+
+const store = new MemoryStore();
 
 export const rateLimit$ = (
   opts: RateLimitOpts = DEFAULT_OPTS
 ): HttpMiddlewareEffect => req$ => {
-  if (opts.window < 0) {
-    throw new Error('Invalid window option must be greater than 0');
+  if (opts.ttl < 0) {
+    throw new Error('Invalid ttl option must be greater than 0');
   }
   if (opts.threshold < 0) {
     throw new Error('Invalid threshold option must be greater than 0');
   }
 
-  const inMemoryStore = new Store(opts.threshold, opts.window);
+  store.start(opts.threshold, opts.ttl);
 
   return req$.pipe(
     switchMap(req =>
       iif(
         () =>
           !!req.connection.remoteAddress &&
-          inMemoryStore.check(req.connection.remoteAddress),
+          store.check(req.connection.remoteAddress),
         of(req),
         throwError(
           new HttpError(

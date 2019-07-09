@@ -1,33 +1,33 @@
-import { interval } from 'rxjs';
+import { interval, Subscription } from 'rxjs';
 import { tap, skip } from 'rxjs/operators';
 
-export class Store {
+export class MemoryStore {
   private tokens = new Map<string, number>();
-
-  constructor(private threshold: number, ttl: number) {
-    const ttlMilliseconds = ttl * 1000;
-
-    interval(ttlMilliseconds)
-      .pipe(
-        skip(1),
-        tap(() => this.tokens.clear())
-      )
-      .subscribe();
-  }
+  private threshold: number | undefined;
+  private expirationSub: Subscription | undefined;
 
   check(key: string, consume = true): boolean {
     if (consume) {
       this.consume(key);
     }
 
-    return this.tokens.get(key)! > 0;
+    return this.tokens.get(key)! >= 0;
+  }
+
+  start(threshold: number, ttl: number): void {
+    const expiration$ = interval(Math.floor(ttl)).pipe(
+      skip(1),
+      tap(() => this.tokens.clear())
+    );
+    this.threshold = Math.floor(threshold);
+    this.expirationSub = expiration$.subscribe();
   }
 
   private consume(key: string): void {
-    const remaining = this.tokens.has(key)
-      ? this.tokens.get(key)! - 1
-      : this.threshold - 1;
+    this.tokens.set(key, this.get(key));
+  }
 
-    this.tokens.set(key, remaining);
+  private get(key: string): number {
+    return (this.tokens.has(key) ? this.tokens.get(key)! : this.threshold!) - 1;
   }
 }
